@@ -1,22 +1,15 @@
 # DHCP ja alamvõrkude labor
 
 ## Seadmed
-- Arvuti x4
-- Cisco 2960 kommutaator x3
+- Arvuti x1
+- Cisco 2960 kommutaator x1
 - Cisco 1941 ruuter x1
-- Server x1
 
 ## Topoloogia
 ```mermaid
 graph TD
-    SW1{Kommutaator 1} --- PC1[PC1]
-    SW1 --- PC2[PC2]
-    R1[Ruuter] --- SW1
-    R1 --- SW2{Kommutaator 2}
-    R1 --- SW3{Kommutaator 3}
-    SW2 --- PC3[PC3]
-    SW3 --- PC4[PC4]
-    SW3 --- Server[Server]
+    R1[Ruuter] --- SW1{Kommutaator}
+    SW1 --- PC1[PC1]
 ```
 
 ## Nõuded
@@ -25,7 +18,14 @@ graph TD
 
 **VLANid:** Kasuta VLAN 10, 20, 30, 40 iga alamvõrgu jaoks
 
-**DHCP serveri seadistus:**
+**Kommutaatori port-ide jaotus:**
+- Port 1-5: VLAN 10 (PC1 testimiseks)
+- Port 6-10: VLAN 20 
+- Port 11-15: VLAN 30
+- Port 16-20: VLAN 40
+- Port 24: Trunk (ruuterisse)
+
+**DHCP ruuteri seadistus:**
 - Pool 1: Aadressid .6 kuni .30
 - Pool 2: Aadressid .6 kuni .20
 - Pool 3: Aadressid .6 kuni .25
@@ -41,26 +41,44 @@ graph TD
 | Võrk | Mask | Gateway | VLAN | Kasutatavad hostid |
 |------|------|---------|------|--------------------|
 | | | | | |
+| | | | | |
+| | | | | |
+| | | | | |
 
 ### DHCP pool-id
 | Pool | Võrk | Vahemik | Välistatud | DNS |
 |------|------|---------|------------|-----|
+| | | | | |
+| | | | | |
+| | | | | |
 | | | | | |
 
 ### Seadmete aadressid
 | Seade | IP | Alamvõrk | VLAN | Tüüp |
 |-------|----|-----------|----- |------|
 | | | | | |
+| | | | | |
+| | | | | |
+| | | | | |
 
 ## Testimise kriteeriumid
-- Kõik arvutid saavad õiged DHCP aadressid
+- PC1 saab õige DHCP aadressi erinevates VLAN-ides
 - VLAN-ide vaheline ping töötab
-- Erinevad DHCP pool-id nähtavad lease'ides
-- Server kättesaadav kõigist VLAN-idest
+- Erinevad DHCP pool-id seadistatud ruuteril
+- PC1 saab liigutada erinevate VLAN-ide vahel testimiseks
 
 ## Vihjed 🐵
+**Jännis?** Otsi: "Router DHCP pool", "Router-on-a-Stick"
 
-**Jännis?** Otsi: "DHCP relay", "Router-on-a-Stick"
+**Pea meeles:** 
+- DHCP pool-id seadistatakse ruuteril endal
+- Subinterface igale VLAN-ile
+- Trunk port peab lubama kõik VLAN-id
 
-**Pea meeles:**  Trikk:
-ip helper-address on VÕTI! See forward'ib DHCP broadcasti serverile läbi ruuteri.
+**Ruuteri näide:**
+```
+Router(config)# ip dhcp pool VLAN10
+Router(dhcp-config)# network 192.168.x.0 255.255.255.???
+Router(dhcp-config)# default-router 192.168.x.?
+Router(dhcp-config)# dns-server 8.8.8.8
+```
