@@ -1,6 +1,8 @@
 # **ACL Seadistamise Õpetus**
+
 ![ACL Configuration Diagram](https://www.networkstraining.com/wp-content/uploads/2012/10/cisco-acl-configuration.png)
 *Allikas: [NetworksTraining.com - CCNA ACL Guide](https://www.networkstraining.com/ccna-training-access-control-lists/)*
+
 ## **1. MIS on ACL?**
 Access Control List = **Liikluse filter** (nagu tulemüür)
 - Kontrollib, mis liiklus **TOHIB** või **EI TOHI** läbi minna
