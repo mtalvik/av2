@@ -42,8 +42,8 @@ graph TD
 **DHCP ruuteri seadistus:**
 - Pool 1 (VLAN10): Aadressid .10 kuni .200
 - Pool 2 (VLAN20): Aadressid .10 kuni .100
-- Pool 3 (VLAN30): Aadressid .5 kuni .45
-- Pool 4 (VLAN40): Aadressid .5 kuni .20
+- Pool 3 (VLAN30): Aadressid .133 kuni .173
+- Pool 4 (VLAN40): Aadressid .197 kuni .212
 - Välista gateway ja esimesed 4 aadressi igast võrgust
 - DNS: 1.1.1.1 (primaarne) ja 8.8.8.8 (sekundaarne)
 
