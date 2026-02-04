@@ -1,4 +1,4 @@
-# Inter-VLAN marsruutimine - Loeng
+# Inter-VLAN marsruutimine
 
 ---
 
