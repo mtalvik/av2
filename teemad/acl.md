@@ -1,153 +1,314 @@
-# **ACL Seadistamise Õpetus**
+# ACL — Access Control List
 
-![ACL Configuration Diagram](https://www.networkstraining.com/wp-content/uploads/2012/10/cisco-acl-configuration.png)
-*Allikas: [NetworksTraining.com - CCNA ACL Guide](https://www.networkstraining.com/ccna-training-access-control-lists/)*
+## Mis on ACL?
 
-## **1. MIS on ACL?**
-Access Control List = **Liikluse filter** (nagu tulemüür)
-- Kontrollib, mis liiklus **TOHIB** või **EI TOHI** läbi minna
-- Töötab nagu nimekiri reegleid ülalt alla
+ACL on nimekiri reeglitest, mis ütleb ruuterile: **"Lase see pakett läbi"** või **"Blokeeri see pakett"**.
 
-## **2. ACL Tüübid:**
-```
-Standard ACL (1-99): Vaatab AINULT source IP
-Extended ACL (100-199): Vaatab source + destination + ports
-```
+Mõtle sellest nagu turvatöötajast uksehoidjast klubis. Tal on nimekiri — kes pääseb sisse, kes mitte. Ruuter teeb sama asja pakettidega.
 
-## **3. KUIDAS ACL-i KIRJUTADA:**
+Ilma ACL-ita laseb ruuter **kõik paketid** läbi. See on nagu lahtine uks — igaüks pääseb. ACL paneb uksele turvatöötaja.
 
-### **Samm 1: Kirjuta ACL reegel**
-```cisco
-access-list [number] [permit/deny] [protocol] [source] [wildcard] [dest] [wildcard] [port]
+---
 
-! NÄIDE - Luba kontori võrgust Google DNS-ile:
-access-list 100 permit ip 192.168.1.0 0.0.0.255 host 8.8.8.8
-         ↑       ↑      ↑     ↑        ↑         ↑
-      number  action protocol source wildcard destination
-```
+## Kus sa oled ACL-i juba kasutanud?
 
-### **Samm 2: Rakenda ACL interface'ile**
-```cisco
-interface g0/0.10              ! Mine õigele interface'ile
- ip access-group 100 in        ! Rakenda ACL 100 sissetulevale liiklusele
-                    ↑  ↑
-                ACL number  suund
-
-! SUUND:
-! in = liiklus mis TULEB SISSE ruuterisse
-! out = liiklus mis LÄHEB VÄLJA ruuterist
-```
-
-## **4. WILDCARD MASK - Kuidas arvutada?**
-
-**LIHTNE REEGEL: Tee subnet mask "tagurpidi"!**
+NAT seadistamises! Mäleta seda rida:
 
 ```
-Subnet Mask → Wildcard Mask
-255.255.255.0 → 0.0.0.255     (0 ↔ 255)
-255.255.255.128 → 0.0.0.127   (128 → 127)
-255.255.255.192 → 0.0.0.63    (192 → 63)
-255.255.255.224 → 0.0.0.31    (224 → 31)
-255.255.255.240 → 0.0.0.15    (240 → 15)
-255.255.255.248 → 0.0.0.7     (248 → 7)
-
-VALEM: Wildcard = 255 - subnet_octet
-Näide: 255 - 224 = 31
+R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+R1(config)# ip nat inside source list 1 interface G0/1 overload
 ```
 
-## **5. TÄIELIK NÄIDE - Kontori Külaliste WiFi:**
+See `access-list 1 permit ...` ongi ACL! Ta ütleb: "need aadressid saavad NAT-i". ACL ei pea alati liiklust blokeerima — ta võib ka lihtsalt **liiklust tuvastada** teiste funktsioonide jaoks (NAT, VPN, QoS).
 
-### **Ülesanne:** Külalised tohivad ainult internetti, mitte firma võrku
+Aga ACL kõige tavalisem kasutus on ikkagi liikluse filtreerimine — kes pääseb kuhu.
 
-```cisco
-! STEP 1: Kirjuta ACL reeglid
-Router(config)# access-list 100 remark === VISITOR WIFI ===
-Router(config)# access-list 100 permit ip 192.168.50.0 0.0.0.255 host 8.8.8.8
-Router(config)# access-list 100 permit ip 192.168.50.0 0.0.0.255 host 1.1.1.1
-Router(config)# access-list 100 deny ip 192.168.50.0 0.0.0.255 192.168.0.0 0.0.255.255
-Router(config)# access-list 100 permit ip 192.168.50.0 0.0.0.255 any
+---
 
-! Mida see teeb:
-! Rida 1: Luba Külalised → Google DNS
-! Rida 2: Luba Külalised → Cloudflare DNS  
-! Rida 3: Keela Külalised → Kõik 192.168.x.x võrgud
-! Rida 4: Luba Külalised → Kõik muu (internet)
+## Permit ja Deny — kuidas loogika töötab?
 
-! STEP 2: Rakenda Külaliste VLAN interface'ile
-Router(config)# interface g0/1.50
-Router(config-subif)# ip access-group 100 in
+ACL on **järjestatud nimekiri**. Ruuter loeb ridu ülalt alla ja peatub **esimese sobiva** juures.
+
+```
+10 permit 192.168.1.0 0.0.0.255
+20 deny   192.168.2.0 0.0.0.255
+30 permit any
 ```
 
-## **6. VTY ACL (SSH/Telnet jaoks):**
+Kui pakett tuleb aadressilt 192.168.1.50:
+1. Rida 10: Kas 192.168.1.50 sobib 192.168.1.0/24-ga? **JAH** → PERMIT → **lõpeta**
+2. Ridu 20 ja 30 ei vaadatagi
 
-```cisco
-! Luba ainult IT osakond SSH-ida
-Router(config)# access-list 102 permit ip 172.16.10.0 0.0.0.255 any
-Router(config)# access-list 102 deny ip any any    ! Tegelikult pole vaja, implicit deny
+Kui pakett tuleb aadressilt 192.168.2.100:
+1. Rida 10: Kas 192.168.2.100 sobib 192.168.1.0/24-ga? EI → liigu edasi
+2. Rida 20: Kas sobib 192.168.2.0/24-ga? **JAH** → DENY → **lõpeta, pakett visatakse ära**
 
-! Rakenda VTY ridadele (MITTE interface'ile!)
-Router(config)# line vty 0 4
-Router(config-line)# access-class 102 in    ! NB! access-CLASS, mitte access-group!
-Router(config-line)# password cisco
-Router(config-line)# login
+### Implicit deny — nähtamatu reegel lõpus
+
+**See on kõige tähtsam asi ACL-ides!**
+
+Iga ACL lõpus on peidetud reegel, mida sa ei näe:
+
+```
+deny any
 ```
 
-## **7. SERVER KAITSE NÄIDE:**
+See tähendab: **kõik, mis ei sobinud ühegi reegli alla, visatakse ära.**
 
-```cisco
-! Ainult IT ja Arendajad saavad serveritesse
-access-list 101 remark === SERVER PROTECTION ===
-access-list 101 permit ip 172.16.10.0 0.0.0.31 172.16.100.0 0.0.0.15  ! IT → Servers
-access-list 101 permit tcp 172.16.20.0 0.0.0.63 172.16.100.0 0.0.0.15 eq 80  ! Dev → Web
-access-list 101 permit tcp 172.16.20.0 0.0.0.63 172.16.100.0 0.0.0.15 eq 443 ! Dev → HTTPS
-access-list 101 deny ip any 172.16.100.0 0.0.0.15  ! Keela kõik muu serveritesse
-access-list 101 permit ip any any  ! Luba muu liiklus
+Seepärast peab ACL-is alati olema vähemalt üks `permit`, muidu blokeeritakse KÕIK.
 
-! Rakenda serveri interface'ile
-interface g0/0.100
- ip access-group 101 in
+---
+
+## Wildcard mask — mis see on?
+
+Sa juba tead subnet maski: `255.255.255.0`. Wildcard mask on **vastupidine** — pöörab bitid ümber.
+
+| Subnet mask | Wildcard mask | Tähendus |
+|-------------|---------------|----------|
+| 255.255.255.0 | 0.0.0.255 | Esimesed 3 oktetti peavad klappima, viimane võib olla ükskõik mis |
+| 255.255.0.0 | 0.0.255.255 | Esimesed 2 oktetti peavad klappima |
+| 255.255.255.252 | 0.0.0.3 | Esimesed 30 bitti peavad klappima |
+| 255.255.255.255 | 0.0.0.0 | **Täpne aadress** — kõik bitid peavad klappima |
+
+### Kuidas arvutada?
+
+Lihtne: **255 miinus subnet mask oktett = wildcard mask oktett**
+
+```
+Subnet mask:  255.255.255.0
+              255 - 255 = 0
+              255 - 255 = 0
+              255 - 255 = 0
+              255 - 0   = 255
+Wildcard:     0.0.0.255
 ```
 
-## **8. KUIDAS KONTROLLIDA:**
-
-```cisco
-! Vaata ACL-i ja kas keegi on seda kasutanud
-Router# show access-lists
-Extended IP access list 100
-    10 permit ip 192.168.50.0 0.0.0.255 host 8.8.8.8 (15 matches)  ← 15 paketti läks läbi!
-    20 deny ip 192.168.50.0 0.0.0.255 192.168.0.0 0.0.255.255 (3 matches) ← 3 blokeeritud!
-
-! Vaata mis on kus rakendatud
-Router# show ip interface g0/1.50 | include access
-  Inbound access list is 100
+Teine näide:
+```
+Subnet mask:  255.255.255.192
+              255 - 192 = 63
+Wildcard:     0.0.0.63
 ```
 
-## **9. SAGEDASED VEAD:** ❌
+### Kaks erilist wildcard maski
 
-```cisco
-! VIGA 1: Vale suund
-interface g0/0.50
- ip access-group 100 out    ! ← VALE! Liiklus tuleb SISSE, mitte välja
+| ACL rida | Lühiversioon | Tähendus |
+|----------|-------------|----------|
+| `permit 0.0.0.0 255.255.255.255` | `permit any` | Luba kõik |
+| `permit 10.0.0.1 0.0.0.0` | `permit host 10.0.0.1` | Ainult see üks aadress |
 
-! VIGA 2: Vale wildcard
-access-list 100 deny ip 192.168.1.0 255.255.255.0 any   ! ← VALE! See on subnet mask!
-access-list 100 deny ip 192.168.1.0 0.0.0.255 any       ! ← ÕIGE! Wildcard mask
+---
 
-! VIGA 3: ACL pole rakendatud
-! Kirjutasid ACL ära, aga unustasid interface'ile panna!
+## Standard ACL vs Extended ACL
 
-! VIGA 4: Vale ACL number VTY jaoks
+Cisco-l on kaks ACL tüüpi ja vahe on lihtne:
+
+### Standard ACL
+
+Standard ACL filtreerib ainult **lähteaadressi** järgi. Numbrid on **1–99** (ja 1300–1999). See on lihtne, aga piiratud — sa ei saa öelda kuhu pakett läheb ega mis teenust ta kasutab.
+
+```
+R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+R1(config)# access-list 1 deny   192.168.2.0 0.0.0.255
+```
+
+Standard ACL vaatab ainult: "Kust pakett tuli?"
+
+### Extended ACL
+
+Extended ACL filtreerib **lähte- JA sihtaadressi**, **protokolli** ja **pordi** järgi. Numbrid on **100–199** (ja 2000–2699). Palju täpsem kontroll.
+
+```
+R1(config)# access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 80
+R1(config)# access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 443
+R1(config)# access-list 100 deny   ip  192.168.1.0 0.0.0.255 any
+```
+
+See ütleb: sisevõrgust (192.168.1.0/24) lubatakse ainult HTTP (port 80) ja HTTPS (port 443). Kõik muu blokeeritakse.
+
+### Extended ACL süntaks
+
+```
+access-list <number> <permit|deny> <protokoll> <lähte-IP> <wildcard> <siht-IP> <wildcard> [eq <port>]
+```
+
+| Osa | Näide | Selgitus |
+|-----|-------|----------|
+| Protokoll | `tcp`, `udp`, `ip`, `icmp` | Mis tüüpi liiklus |
+| Lähte-IP + wildcard | `192.168.1.0 0.0.0.255` | Kust tuleb |
+| Siht-IP + wildcard | `any` | Kuhu läheb |
+| Port | `eq 80`, `eq 443`, `eq 22` | Mis teenus (TCP/UDP puhul) |
+
+### Levinumad pordinumbrid
+
+| Port | Teenus | Protokoll |
+|------|--------|-----------|
+| 22 | SSH | TCP |
+| 23 | Telnet | TCP |
+| 53 | DNS | TCP/UDP |
+| 80 | HTTP | TCP |
+| 443 | HTTPS | TCP |
+| 67/68 | DHCP | UDP |
+
+---
+
+## ACL paigaldamine liidesele
+
+ACL-i loomine üksi **ei tee midagi**! See on nagu reeglite kirjutamine paberile — keegi peab need uksele panema.
+
+```
+R1(config)# interface GigabitEthernet0/0
+R1(config-if)# ip access-group 1 in
+```
+
+### Suund: `in` vs `out`
+
+- **`in`** — kontrolli pakette, mis **tulevad sisse** sellelt liideselt
+- **`out`** — kontrolli pakette, mis **lähevad välja** sellelt liideselt
+
+### Kuhu paigaldada?
+
+**Rusikareegel:**
+- **Standard ACL** → pane **sihtkoha lähedale** (sest ta teab ainult lähteaadressi — kui paned lähtekoha juurde, blokeerid kogu liikluse sellest allikast kõigile)
+- **Extended ACL** → pane **lähtekoha lähedale** (sest ta saab täpselt filtreerida — blokeeri ebavajalik liiklus nii vara kui võimalik)
+
+---
+
+## Named ACL — nimetatud ACL
+
+Numbreid on raske meeles pidada. Named ACL kasutab nime ja lubab ridu muuta ilma kogu ACL-i ümber tegemata:
+
+```
+R1(config)# ip access-list standard KONTOR-NAT
+R1(config-std-nacl)# permit 192.168.1.0 0.0.0.255
+R1(config-std-nacl)# exit
+```
+
+```
+R1(config)# ip access-list extended TURVAPOLIITIKA
+R1(config-ext-nacl)# permit tcp 192.168.1.0 0.0.0.255 any eq 80
+R1(config-ext-nacl)# permit tcp 192.168.1.0 0.0.0.255 any eq 443
+R1(config-ext-nacl)# deny ip any any
+R1(config-ext-nacl)# exit
+```
+
+---
+
+## VTY ACL — SSH/Telnet ligipääsu piiramine
+
+ACL saab panna ka VTY ridadele, et piirata kes tohib ruuterisse SSH-da:
+
+```
+R1(config)# access-list 10 permit 172.16.10.0 0.0.0.255
+R1(config)# line vty 0 4
+R1(config-line)# access-class 10 in
+```
+
+**NB!** VTY kasutab `access-class`, mitte `access-group`!
+
+---
+
+## ACL kontrollikäsud
+
+```
+R1# show access-lists
+R1# show access-lists 1
+R1# show ip interface G0/0 | include access
+```
+
+`matches` näitab mitu paketti selle reegli alla sobis — kasulik veaotsingul!
+
+```
+R1# show access-lists
+Standard IP access list 1
+    10 permit 192.168.1.0, wildcard bits 0.0.0.255 (156 matches)
+    20 deny   any (3 matches)
+```
+
+---
+
+## Standard vs Extended — võrdlus
+
+| Omadus | Standard | Extended |
+|--------|----------|----------|
+| Number | 1–99 | 100–199 |
+| Filtreerib | Ainult lähteaadress | Lähte + siht + protokoll + port |
+| Täpsus | Madal | Kõrge |
+| Kus paigaldada | Sihtkoha lähedal | Lähtekoha lähedal |
+| Kasutus | NAT, VPN, lihtne filtreerimine | Tulemüüri reeglid, täpne kontroll |
+
+---
+
+## Levinumad vead
+
+### 1. Reeglitest järjekord on vale
+
+```
+! VALE — deny any on enne permit-i!
+access-list 100 deny ip any any
+access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 80
+! Teine rida ei rakendu kunagi
+```
+
+### 2. Unustasid ACL liidesele panna
+
+ACL loodi, aga `ip access-group` käsku ei antud. ACL ei tee midagi!
+
+### 3. Vale suund (in/out)
+
+```
+! VALE — liiklus tuleb SISSE, mitte välja
+interface g0/0
+ ip access-group 100 out
+```
+
+### 4. Implicit deny unustamine
+
+```
+! Ainult deny reegel — kõik on blokeeritud!
+access-list 1 deny 192.168.2.0 0.0.0.255
+! Puudu: permit any
+```
+
+### 5. Wildcard vs subnet mask
+
+```
+! VALE — see on subnet mask!
+access-list 100 deny ip 192.168.1.0 255.255.255.0 any
+
+! ÕIGE — wildcard mask
+access-list 100 deny ip 192.168.1.0 0.0.0.255 any
+```
+
+### 6. VTY-l access-group asemel access-class
+
+```
+! VALE
 line vty 0 4
- ip access-group 102 in    ! ← VALE! VTY kasutab access-CLASS
- access-class 102 in       ! ← ÕIGE!
+ ip access-group 10 in
+
+! ÕIGE
+line vty 0 4
+ access-class 10 in
 ```
 
-## **KOKKUVÕTE - 3 SAMMU:**
-1. **KIRJUTA** ACL (access-list 100 ...)
-2. **RAKENDA** interface'ile (ip access-group 100 in) või VTY-le (access-class)
-3. **KONTROLLI** (show access-lists)
+---
 
-**MEELDETULETUS:** 
-- ACL töötab ülalt alla - esimene vaste võidab!
-- Lõpus on alati nähtamatu "deny all"
-- **SINU laboris kasuta OMA arvutatud 10.x.x.x IP-sid!** 🦍
+## Kontrolli ennast
+
+1. Mis on ACL ja miks seda kasutatakse?
+2. Mis vahe on Standard ja Extended ACL-il?
+3. Mis on implicit deny?
+4. Arvuta wildcard mask subnet maskist 255.255.255.128.
+5. Kuhu paigaldada Standard ACL? Kuhu Extended ACL? Miks?
+6. Kirjuta Extended ACL reegel: luba VLAN 10-st (10.10.10.0/24) HTTP ja HTTPS liiklust.
+7. Kus sa oled juba ACL-i kasutanud? (Vihje: NAT!)
+
+---
+
+## Lisalugemine
+
+- [NetworkLessons: Introduction to ACL](https://networklessons.com/cisco/ccna-routing-switching-icnd1-100-105/introduction-to-access-lists)
+- [NetworkLessons: Standard ACL](https://networklessons.com/cisco/ccna-routing-switching-icnd1-100-105/cisco-ios-standard-access-list)
+- [NetworkLessons: Extended ACL](https://networklessons.com/cisco/ccna-routing-switching-icnd1-100-105/cisco-ios-extended-access-list)
+- [Cisco: ACL Configuration Guide](https://www.cisco.com/c/en/us/support/docs/security/ios-firewall/23602-confaccesslists.html)
