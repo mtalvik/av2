@@ -1,0 +1,48 @@
+---
+- name: GNS3 serveri esmane seadistus
+  hosts: all
+  become: yes
+  vars:
+    ansible_user: gns3
+    ansible_password: gns3
+    ansible_become_password: gns3
+    ansible_new_password: "AV2-Admin!"
+    webui_user: "admin"
+    webui_default_password: "admin"
+    webui_new_password: "AV2-GNS3!"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+  tasks:
+    - name: Muuda OS gns3 kasutaja parool
+      ansible.builtin.user:
+        name: gns3
+        password: "{{ ansible_new_password | password_hash('sha512') }}"
+
+    - name: GNS3 autentimine
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users/authenticate"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          username: "{{ webui_user }}"
+          password: "{{ webui_default_password }}"
+        return_content: yes
+      register: login_response
+
+    - name: Salvesta token
+      ansible.builtin.set_fact:
+        gns3_token: "{{ login_response.json.access_token }}"
+
+    - name: Muuda GNS3 admin parool
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users/me"
+        method: PUT
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        body_format: json
+        body:
+          password: "{{ webui_new_password }}"
+        status_code: 200

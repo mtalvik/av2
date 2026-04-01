@@ -1,0 +1,293 @@
+---
+- name: GNS3 seadistamine - AV2 labor
+  hosts: all
+  become: yes
+  vars:
+    ansible_user: gns3
+    ansible_password: "AV2-Admin!"
+    ansible_become_password: "AV2-Admin!"
+    webui_admin_user: "admin"
+    webui_admin_password: "AV2-GNS3!"
+    local_build_dir: "./containers"
+    remote_build_dir: "/opt/containers"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+    # 17 tudengit
+    students:
+      - { username: "tudeng01", password: "av2-lab-01" }
+      - { username: "tudeng02", password: "av2-lab-02" }
+      - { username: "tudeng03", password: "av2-lab-03" }
+      - { username: "tudeng04", password: "av2-lab-04" }
+      - { username: "tudeng05", password: "av2-lab-05" }
+      - { username: "tudeng06", password: "av2-lab-06" }
+      - { username: "tudeng07", password: "av2-lab-07" }
+      - { username: "tudeng08", password: "av2-lab-08" }
+      - { username: "tudeng09", password: "av2-lab-09" }
+      - { username: "tudeng10", password: "av2-lab-10" }
+      - { username: "tudeng11", password: "av2-lab-11" }
+      - { username: "tudeng12", password: "av2-lab-12" }
+      - { username: "tudeng13", password: "av2-lab-13" }
+      - { username: "tudeng14", password: "av2-lab-14" }
+      - { username: "tudeng15", password: "av2-lab-15" }
+      - { username: "tudeng16", password: "av2-lab-16" }
+      - { username: "tudeng17", password: "av2-lab-17" }
+
+  tasks:
+    # ============================================================
+    # DOCKER CONTAINERID
+    # ============================================================
+    - name: GNS3 OS - Loo containerite kaust serveris
+      ansible.builtin.file:
+        path: "{{ remote_build_dir }}"
+        state: directory
+        mode: '0755'
+      tags: containers
+
+    - name: GNS3 OS - Kopeeri container failid serverisse
+      ansible.builtin.copy:
+        src: "{{ local_build_dir }}/"
+        dest: "{{ remote_build_dir }}/"
+        mode: 0644
+      register: copy_result
+      tags: containers
+
+    - name: GNS3 OS - Otsi Dockerfile'id
+      ansible.builtin.find:
+        paths: "{{ remote_build_dir }}"
+        recurse: yes
+        patterns: "Dockerfile"
+      register: dockerfiles
+      tags: containers
+
+    - name: GNS3 OS - Ehita Docker image'id
+      ansible.builtin.shell: |
+        docker build -t av2/{{ item.path | dirname | basename }} {{ item.path | dirname }}
+      loop: "{{ dockerfiles.files }}"
+      args:
+        chdir: "{{ remote_build_dir }}"
+      when:
+        - dockerfiles.files | length > 0
+        - copy_result.changed
+      tags: containers
+
+    # ============================================================
+    # GNS3 AUTENTIMINE
+    # ============================================================
+    - name: GNS3 Web - Autentimine
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users/authenticate"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          username: "{{ webui_admin_user }}"
+          password: "{{ webui_admin_password }}"
+        return_content: yes
+      register: login_response
+      tags: containers, users, cisco, templates
+
+    - name: GNS3 Web - Salvesta token
+      ansible.builtin.set_fact:
+        gns3_token: "{{ login_response.json.access_token }}"
+      tags: containers, users, cisco, templates
+
+    # ============================================================
+    # TUDENGITE KONTOD
+    # ============================================================
+    - name: GNS3 Web - Lae kasutajate nimekiri
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        return_content: yes
+      register: users_list
+      tags: users
+
+    - name: GNS3 Web - Lae rollide nimekiri
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/roles"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        return_content: yes
+      register: roles_list
+      tags: users
+
+    - name: GNS3 Web - Leia User rolli ID
+      ansible.builtin.set_fact:
+        user_role_id: "{{ roles_list.json | selectattr('name', 'equalto', 'User') | map(attribute='role_id') | first | default(roles_list.json | selectattr('name', 'equalto', 'Administrator') | map(attribute='role_id') | first) }}"
+      tags: users
+
+    - name: GNS3 Web - Loo tudengite kontod
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        body_format: json
+        body:
+          username: "{{ item.username }}"
+          password: "{{ item.password }}"
+          is_admin: false
+        status_code: 201
+      loop: "{{ students }}"
+      when: >
+        users_list.json | selectattr('username', 'equalto', item.username) | list | length == 0
+      tags: users
+
+    - name: GNS3 Web - Lae uuendatud kasutajate nimekiri
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        return_content: yes
+      register: users_list_updated
+      tags: users
+
+    - name: GNS3 Web - Loo ACL igale tudengile
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/acl"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        body_format: json
+        body:
+          ace_type: "user"
+          path: "/"
+          propagate: true
+          allowed: true
+          user_id: "{{ users_list_updated.json | selectattr('username', 'equalto', item.username) | map(attribute='user_id') | first }}"
+          group_id: null
+          role_id: "{{ user_role_id }}"
+        status_code: 201
+      loop: "{{ students }}"
+      when: >
+        users_list_updated.json | selectattr('username', 'equalto', item.username) | list | length > 0
+      ignore_errors: yes
+      tags: users
+
+    # ============================================================
+    # IOL-XE IMAGE'ID
+    # ============================================================
+    - name: GNS3 OS - Lae IOL image'id serverisse
+      ansible.builtin.copy:
+        src: "./iou_images/"
+        dest: "/opt/gns3/images/IOU/"
+        owner: "gns3"
+        group: "gns3"
+        mode: '0744'
+      register: iou_upload
+      tags: cisco
+
+    - name: GNS3 OS - Reboot pärast IOL üleslaadimist
+      ansible.builtin.reboot:
+      when: iou_upload.changed
+      tags: cisco
+
+    - name: GNS3 Web - Oota teenuse taaskäivitust
+      ansible.builtin.pause:
+        minutes: 1
+      when: iou_upload.changed
+      tags: cisco
+
+    - name: GNS3 Web - Autentimine pärast rebooti
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/access/users/authenticate"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          username: "{{ webui_admin_user }}"
+          password: "{{ webui_admin_password }}"
+        return_content: yes
+      register: login_response_2
+      when: iou_upload.changed
+      tags: cisco, templates
+
+    - name: GNS3 Web - Uuenda token
+      ansible.builtin.set_fact:
+        gns3_token: "{{ login_response_2.json.access_token }}"
+      when: iou_upload.changed
+      tags: cisco, templates
+
+    # ============================================================
+    # GNS3 TEMPLATE'ID
+    # ============================================================
+    - name: GNS3 Web - Lae template'ide nimekiri
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/templates"
+        method: GET
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        return_content: yes
+      register: templates_list
+      tags: containers, cisco, templates
+
+    - name: GNS3 Web - Loo IOL-XE template'id
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/templates"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        body_format: json
+        body: "{{ item }}"
+        status_code: 201
+      loop:
+        - name: IOL XE L2
+          template_type: iou
+          node_type: iou
+          iou_image: "iol-xe-l2-17-15-01.iol"
+          path: "iol-xe-l2-17-15-01.iol"
+          ram: 256
+          nvram: 512
+          compute_id: local
+          symbol: ":/symbols/affinity/square/blue/switch_multilayer.svg"
+          ethernet_adapters: 8
+
+        - name: IOL XE L3
+          template_type: iou
+          node_type: iou
+          iou_image: "iol-xe-l3-17-15-01.iol"
+          path: "iol-xe-l3-17-15-01.iol"
+          ram: 512
+          nvram: 512
+          compute_id: local
+          symbol: ":/symbols/affinity/circle/gray/router2.svg"
+          ethernet_adapters: 4
+      when: >
+        templates_list.json | selectattr('name', 'equalto', item.name) | list | length == 0
+      tags: cisco, templates
+
+    - name: GNS3 Web - Loo Docker template'id
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/v3/templates"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ gns3_token }}"
+        body_format: json
+        body: "{{ item }}"
+        status_code: 201
+      loop:
+        - name: Lab Client
+          template_type: docker
+          image: av2/lab-client
+          adapters: 1
+          console_type: telnet
+          symbol: ":/symbols/affinity/circle/red/laptop.svg"
+          node_type: docker
+          compute_id: local
+      when: >
+        templates_list.json | selectattr('name', 'equalto', item.name) | list | length == 0
+      tags: containers, templates
